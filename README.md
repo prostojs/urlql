@@ -1,6 +1,8 @@
 # urlql
 
-A **human‑readable URL query language** for GET requests.  It turns a browser‑friendly query string into three plain JavaScript structures:
+A **human‑readable URL query language** for GET requests.
+
+It turns a browser‑friendly query string into three plain JavaScript structures:
 
 | Name           | What it contains                                                                                                    | Typical use‑case                                                            |
 | -------------- | ------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
@@ -9,6 +11,52 @@ A **human‑readable URL query language** for GET requests.  It turns a browser�
 | **`insights`** | `Map<string, Set<op>>` showing which **fields** appear in the query and with **which operators** (`$eq`, `$gt`, …). | Enforce white‑lists, build dynamic indexes, audit queries, security checks. |
 
 The shapes are deliberately **Mongo‑compatible** (`$gt`, `$and`, …) so they can be passed to `collection.find()` directly.  But nothing is Mongo‑specific; the output is pure JSON‑serialisable data + `RegExp` objects.
+
+
+**Example:**
+
+```ts
+import { parseUrlql } from 'urlql';
+
+const query = `
+  $select=firstName,-ssn
+  &$order=-createdAt
+  &$limit=20
+  &age>=18&age<=30
+  &(status!=DELETED^name~=/^Jo/i^role{Admin,Editor})
+`.replace(/\s+/g, '');
+
+const result = parseUrlql(query);
+```
+results in:
+```js
+{
+  filter: {
+    $and: [
+      { age: { $gte: 18, $lte: 30 } },
+      {
+        $or: [
+          { status: { $ne: 'DELETED' } },
+          { name: { $regex: /^Jo/i } },
+          { role: { $in: ['Admin', 'Editor'] } },
+        ]
+      }
+    ]
+  },
+  controls: {
+    $select: { firstName: 1, ssn: 0 },
+    $sort: { createdAt: -1 },
+    $limit: 20,
+  },
+  insights: Map {
+    'age'    => Set { '$gte', '$lte' },
+    'status' => Set { '$ne' },
+    'name'   => Set { '$regex' },
+    'role'   => Set { '$in' },
+  }
+}
+```
+
 
 ---
 

@@ -1,5 +1,7 @@
 import { Token, TokenType } from "./tokens";
-import { ComparisonNode, FilterExpr, Primitive } from "./urlql";
+import { FilterExpr } from "./urlql";
+
+export type SupportedOps = '$eq' | '$ne' | '$gt' | '$gte' | '$lt' | '$lte' | '$in' | '$nin' | '$regex' | '$exists';
 
 export class Parser {
     private i = 0;
@@ -10,7 +12,7 @@ export class Parser {
     private consume(type?: TokenType) {
         const tok = this.t[this.i++];
         if (type && tok.type !== type) {
-            throw new SyntaxError(`Expected ${type}, got ${tok.type}`);
+            throw new SyntaxError(`Expected ${type}, got "${tok.value}" at pos ${tok.pos}`);
         }
         return tok;
     }
@@ -20,7 +22,20 @@ export class Parser {
     }
     expectEof() {
         if (this.i !== this.t.length)
-            throw new SyntaxError('Unexpected tokens at end');
+            throw new SyntaxError(`Unexpected token at pos ${this.t[this.i]?.pos}. End of input expected.`);
+    }
+
+    private insights = new Map<string, Set<SupportedOps>>()
+
+    private captureInsights(field: string, op: SupportedOps) {
+        if (!this.insights.has(field)) {
+            this.insights.set(field, new Set())
+        }
+        this.insights.get(field)!.add(op);
+    }
+
+    getInsights() {
+        return this.insights;
     }
 
     /** === grammar methods === */
@@ -72,14 +87,18 @@ export class Parser {
                 const field = this.consume('word').value;
                 const secondOpTok = this.consume();
                 if (secondOpTok.type !== 'op-lt' && secondOpTok.type !== 'op-lte') {
-                    throw new SyntaxError('Invalid between syntax');
+                    throw new SyntaxError(`Invalid between syntax at pos ${secondOpTok.pos}`);
                 }
                 const rhsLit = this.parseLiteral();
                 const out: FilterExpr = {};
+                const op1 = firstOp === 'op-lt' ? '$gt' : '$gte'
+                const op2 = secondOpTok.type === 'op-lt' ? '$lt' : '$lte'
                 out[field] = {
-                    [firstOp === 'op-lt' ? '$gt' : '$gte']: lhsLit,
-                    [secondOpTok.type === 'op-lt' ? '$lt' : '$lte']: rhsLit,
+                    [op1]: lhsLit,
+                    [op2]: rhsLit,
                 };
+                this.captureInsights(field, op1);
+                this.captureInsights(field, op2);
                 return out;
             }
         }
@@ -93,6 +112,9 @@ export class Parser {
                 const fields: string[] = [];
                 fields.push(this.consume('word').value);
                 while (this.match('comma')) fields.push(this.consume('word').value);
+                for (const field of fields) {
+                    this.captureInsights(field, '$exists');
+                }
                 return buildExists(fields, kwTok.value === '$exists');
             }
         }
@@ -110,7 +132,9 @@ export class Parser {
             this.consume('rbrace');
 
             const out: FilterExpr = {};
-            out[field] = { [negate ? '$nin' : '$in']: list };
+            const op = negate ? '$nin' : '$in';
+            out[field] = { [op]: list };
+            this.captureInsights(field, op);
             return out;
         }
 
@@ -118,7 +142,13 @@ export class Parser {
         const fieldTok = this.consume('word');
         const opTok = this.consume() as Token;
         const lit = this.parseLiteral();
-        return buildComparison(fieldTok.value, opTok.type, lit);
+        const op = opMap[opTok.type];
+        const field = fieldTok.value
+        if (op === undefined)
+            throw new SyntaxError(`Unsupported operator "${opTok.value}" at pos ${opTok.pos}`);
+
+        this.captureInsights(field, op)
+        return op === '$eq' ? { [field]: lit } : { [field]: { [op]: lit } };
     }
 
     parseLiteral(): any {
@@ -127,41 +157,25 @@ export class Parser {
             case 'number': return Number(tok.value);
             case 'boolean': return tok.value === 'true';
             case 'null': return null;
-            case 'string': return unescapeString(tok.value);
             case 'regex': return new RegExp(tok.value.slice(1, tok.value.lastIndexOf('/')), tok.value.slice(tok.value.lastIndexOf('/') + 1));
-            case 'word': return tok.value;
-            default: throw new SyntaxError(`Unexpected literal ${tok.type} at pos ${tok.pos}`);
+            case 'word': return tok.value
+            case 'string': return unescapeString(tok.value)
+            default: throw new SyntaxError(`Unexpected literal "${tok.value}" at pos ${tok.pos}`);
         }
     }
 }
 
-function buildComparison(
-    field: string,
-    op: TokenType,
-    lit: Primitive
-): ComparisonNode {
-
-    // op-token → mongo-op (null = equality shortcut)
-    const map: {
-        [name in TokenType]?: string | null
-    } = {
-        'op-eq': null,
-        'op-ne': '$ne',
-        'op-gt': '$gt',
-        'op-gte': '$gte',
-        'op-lt': '$lt',
-        'op-lte': '$lte',
-        'op-regex': '$regex',
-    };
-
-    const mongoOp = map[op];
-    if (mongoOp === undefined)
-        throw new SyntaxError(`Unsupported operator ${op}`);
-
-    if (mongoOp === null) return { [field]: lit };
-
-    return { [field]: { [mongoOp]: lit } };
-}
+const opMap: {
+    [name in TokenType]?: SupportedOps
+} = {
+    'op-eq': '$eq',
+    'op-ne': '$ne',
+    'op-gt': '$gt',
+    'op-gte': '$gte',
+    'op-lt': '$lt',
+    'op-lte': '$lte',
+    'op-regex': '$regex',
+};
 
 function unescapeString(str: string): string {
     return str.replace(/(^'|'$)/gu, '');

@@ -14,6 +14,15 @@ describe('Lexer', () => {
             { pos: 15, type: 'number', value: '18' },
         ]);
     });
+
+    it('should tokenize a free text', () => {
+        const tokens = lex('name=John Doe');
+        expect(tokens).toEqual([ 
+            { pos: 0, type: 'word', value: 'name' },
+            { pos: 4, type: 'op-eq', value: '=' },
+            { pos: 5, type: 'string', value: 'John Doe' },
+        ]);
+    });
     it('should tokenize a regex literal', () => {
         const tokens = lex('/^John/i');
         expect(tokens).toEqual([

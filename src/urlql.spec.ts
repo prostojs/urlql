@@ -27,6 +27,11 @@ describe('Urlql – happy‑path filters', () => {
         expect(r.filter).toEqual({ name: { $regex: /^Jo/i } });
     });
 
+    it('strings with space', () => {
+        const r = parseUrlql("name=John%20Doe");
+        expect(r.filter).toEqual({ name: 'John Doe' });
+    });
+
     it('in / nin lists', () => {
         const r = parseUrlql('role{Admin,Editor}&status!{Draft,Deleted}');
         expect(r.filter).toEqual({
@@ -151,6 +156,7 @@ describe('Urlql – error cases', () => {
         expect(parseUrlql('$foo=bar')).toEqual({
             filter: {},
             controls: { $foo: 'bar' },
+            insights: new Map()
         });
     });
 });
@@ -276,6 +282,47 @@ describe('Urlql – kitchen-sink query', () => {
         });
 
         expect(r.filter).toEqual(expected);
+
+        expect(r.insights).toMatchInlineSnapshot(`
+          Map {
+            "client.phone" => Set {
+              "$exists",
+            },
+            "deletedAt" => Set {
+              "$exists",
+            },
+            "age" => Set {
+              "$gte",
+              "$lte",
+            },
+            "status" => Set {
+              "$ne",
+            },
+            "name" => Set {
+              "$regex",
+            },
+            "role" => Set {
+              "$in",
+            },
+            "category" => Set {
+              "$nin",
+            },
+            "height" => Set {
+              "$gt",
+              "$lt",
+            },
+            "score" => Set {
+              "$gt",
+            },
+            "price" => Set {
+              "$gt",
+              "$lt",
+            },
+            "deletedFrom" => Set {
+              "$exists",
+            },
+          }
+        `)
     });
 });
 

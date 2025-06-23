@@ -1,4 +1,4 @@
-import { Parser } from "./parser";
+import { Parser, SupportedOps } from "./parser";
 import { lex } from "./tokens";
 
 // ─────────── Parser public result ───────────
@@ -18,6 +18,9 @@ export interface UrlqlQuery {
         $count?: boolean;
         $select?: Record<string, 0 | 1>
     } & Record<string, string>;
+
+    /** Query Insights: a map of used fields with a set of used operators */
+    insights: Map<string, Set<SupportedOps>>;
 }
 
 /** Minimal set of node shapes we emit */
@@ -88,7 +91,7 @@ export function parseUrlql(raw: string): UrlqlQuery {
         else if (p.length) exprParts.push(p);
     }
 
-    const result: UrlqlQuery = { filter: {}, controls: {} };
+    const result: UrlqlQuery = { filter: {}, controls: {}, insights: new Map() };
 
     // ── controls (also returns an optional extra filter) ──
     handleControls(controlParts, result);
@@ -101,6 +104,7 @@ export function parseUrlql(raw: string): UrlqlQuery {
         const tokens = lex(decoded);
         const parser = new Parser(tokens);
         exprFilter = parser.parseExpression();
+        result.insights = parser.getInsights();
         parser.expectEof();
       }
 

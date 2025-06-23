@@ -1,21 +1,25 @@
 # urlql
 
-A **human‑readable URL query language** for GET requests.  It turns a browser‑friendly query string into a pair of plain JavaScript objects:
+A **human‑readable URL query language** for GET requests.  It turns a browser‑friendly query string into three plain JavaScript structures:
 
-* **`filter`** – a structured predicate tree (comparison operators, `AND`/`OR`, lists, regexes, exists, between).
-* **`controls`** – optional, query‑wide instructions such as paging, sort, projection or any custom `$keyword`.
+| Name           | What it contains                                                                                                    | Typical use‑case                                                            |
+| -------------- | ------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| **`filter`**   | Predicate tree built from the query (`AND`/`OR`, comparisons, lists, regexes, exists, between).                     | Feed into a data‑layer (Mongo, SQL builder, Elasticsearch, etc.).           |
+| **`controls`** | Global hints taken from `$keywords` (projection, sort, paging, custom flags).                                       | Apply limit/offset, create `ORDER BY`, choose columns, etc.                 |
+| **`insights`** | `Map<string, Set<op>>` showing which **fields** appear in the query and with **which operators** (`$eq`, `$gt`, …). | Enforce white‑lists, build dynamic indexes, audit queries, security checks. |
 
-The returned shape is intentionally **Mongo‑compatible**, so it can be passed straight to `collection.find()`.  *But nothing in urlql is Mongo‑specific*; the output is just JSON‑serialisable data.  Adapt it to SQL query builders, Elasticsearch DSL, or any datastore that understands the same operator concepts.
+The shapes are deliberately **Mongo‑compatible** (`$gt`, `$and`, …) so they can be passed to `collection.find()` directly.  But nothing is Mongo‑specific; the output is pure JSON‑serialisable data + `RegExp` objects.
 
 ---
 
 ## Why urlql?
 
-| Problem                                                                    | How urlql helps                                                        |
-| -------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
-| GraphQL and POST‑JSON endpoints require specialised clients.               | urlql stays in the browser address bar – copy/paste, bookmark, share.  |
-| OData’s `$filter=…` strings are verbose and percent‑encoded.               | urlql keeps tokens unescaped where allowed ( `&`, `^`, `(`, `)` ).     |
-| Ad‑hoc debugging against REST services is slow when requests must be JSON. | urlql works with a **single GET** – perfect for cURL or a browser tab. |
+| Pain point                                                       | urlql’s answer                                                       |
+| ---------------------------------------------------------------- | -------------------------------------------------------------------- |
+| GraphQL/JSON endpoints need POST bodies and specialised clients. | urlql stays entirely in the **address bar** – bookmark, share, cURL. |
+| OData `$filter` strings are long and percent‑encoded.            | urlql keeps `&` `^` `(` `)` raw, so queries stay legible.            |
+| Ad‑hoc debugging requires tools like Postman.                    | A single GET in the browser is enough.                               |
+| Applications must enforce which fields a consumer may filter.    | `insights` tells you exactly which fields/operators were used.       |
 
 ---
 
@@ -26,14 +30,15 @@ import { parseUrlql } from 'urlql';
 
 // everything after "?":
 const qs = location.search.slice(1);
-const { filter, controls } = parseUrlql(qs);
+const { filter, controls, insights } = parseUrlql(qs);
 ```
 
-The parser is dependency‑free and returns:
+Result interface (simplified):
 
 ```ts
 interface UrlqlQuery {
   filter:   FilterExpr & Record<string, Primitive>;
+
   controls: {
     $sort?:   Record<string, 1 | -1>;   // standard keywords
     $skip?:   number;
@@ -41,27 +46,31 @@ interface UrlqlQuery {
     $count?:  boolean;
     $select?: Record<string, 0 | 1>;
   } & Record<string,string>;            // custom $keywords pass‑through
+
+  insights: Map<string, Set<
+    '$eq' | '$ne' | '$gt' | '$gte' | '$lt' | '$lte' | '$in' |
+    '$nin' | '$regex' | '$exists'
+  >>;
 }
 ```
 
-### Using with MongoDB (optional)
+### Example – enforcing a whitelist
 
 ```ts
-collection.find(filter, {
-  projection : controls.$select,
-  sort       : controls.$sort,
-  limit      : controls.$limit,
-  skip       : controls.$skip,
-});
-```
+const SAFE_NUMERIC_ONLY = new Set(['$eq', '$gt', '$gte', '$lt', '$lte']);
 
-Adapting to other engines is as simple as mapping the same keys.
+for (const [field, ops] of insights) {
+  if (field === 'price' && [...ops].some(op => !SAFE_NUMERIC_ONLY.has(op))) {
+    throw new Error(`Price may only be filtered with numeric comparison ops`);
+  }
+}
+```
 
 ---
 
 ## Language reference
 
-### Field comparison operators
+### 1 Field comparison operators
 
 | Syntax fragment                        | Parsed filter snippet                                    |
 | -------------------------------------- | -------------------------------------------------------- |
@@ -75,52 +84,53 @@ Adapting to other engines is as simple as mapping the same keys.
 | `25<age<35`                            | `{age:{$gt:25,$lt:35}}`                                  |
 | `$exists=phone`  `$!exists=archivedAt` | `{phone:{$exists:true}}`, `{archivedAt:{$exists:false}}` |
 
-### Logical connectors
+### 2 Logical connectors
 
 * `&` → **AND** (higher precedence)
 * `^` → **OR**
 * Parentheses `(...)` for grouping
 
-### Literals
+### 3 Literals & encoding rules
 
-| Kind    | Example(s)                                        |
-| ------- | ------------------------------------------------- |
-| Number  | `42`, `-7`, `3.14`                                |
-| String  | `name='John%20Doe'` (single quotes) or bare `Admin` |
-| Boolean | `true`, `false`                                   |
-| Null    | `null`                                            |
-| RegExp  | `/pattern/i`                                      |
+| Kind    | Example(s)                          |
+| ------- | ----------------------------------- |
+| Number  | `42`, `-7`, `3.14`                  |
+| String  | `name='John%20Doe'` or bare `Admin` |
+| Boolean | `true`, `false`                     |
+| Null    | `null`                              |
+| RegExp  | `/pattern/i`                        |
 
-Spaces may be written as `%20`. `urlql` applies `decodeURIComponent` so mixed usage is fine.
+`urlql` runs `decodeURIComponent` on the expression part, so any `%xx` escapes are resolved. (The `+` shorthand for space **is not interpreted** in strings to avoid ambiguity with regex.)
 
-### Control keywords (start with `$`)
+### 4 Control keywords
 
-| Keyword   | Example value                                         | Meaning               |
-| --------- | ----------------------------------------------------- | --------------------- |
-| `$select` | `name,-password`                                      | Field include/exclude |
-| `$order`  | `-createdAt,score`                                    | Sort DESC / ASC       |
-| `$limit`  | `50`                                                  | Limit maximum docs    |
-| `$top`    | alias of `$limit`                                     |                       |
-| `$skip`   | `100`                                                 | Skip (offset)         |
-| `$count`  | *(present)*                                           | Return only doc count |
-| *custom*  | Any other `$foo=bar` is stored intact in **controls** |                       |
+| Keyword   | Example value                                       | Meaning               |
+| --------- | --------------------------------------------------- | --------------------- |
+| `$select` | `name,-password`                                    | Field include/exclude |
+| `$order`  | `-createdAt,score`                                  | Sort DESC / ASC       |
+| `$limit`  | `50`                                                | Limit max docs        |
+| `$top`    | alias for `$limit`                                  |                       |
+| `$skip`   | `100`                                               | Skip (offset)         |
+| `$count`  | *present*                                           | Return only doc count |
+| *custom*  | Any other `$foo=bar` kept untouched in **controls** |                       |
 
 ---
 
 ## Worked examples
 
 ```text
-# Simple list + paging
-?$select=name,email&$limit=10&$skip=20&name~=/doe/i
+# 1. Simple list + paging + insights
+?$select=name,email&$limit=10&name~=/doe/i
 ```
 
 ```js
 filter   = { name: { $regex: /doe/i } };
-controls = { $select:{name:1,email:1}, $limit:10, $skip:20 };
+controls = { $select:{name:1,email:1}, $limit:10 };
+insights = Map { 'name' => Set(['$regex']) };
 ```
 
 ```text
-# Complex grouping
+# 2. Complex grouping
 ?(age>25&score>550)^status=VIP
 ```
 
@@ -133,31 +143,34 @@ filter = {
 };
 ```
 
+`insights` here tells you `age` uses `$gt`, `score` uses `$gt`, `status` uses `$eq`.
+
 ```text
-# All together (URL‑encoded)
-$select=firstName,-ssn&$order=-createdAt&age>=18&age<=30&name~=%2F^Jo%2Fi
+# 3. Kitchen‑sink query (shortened)
+$exists=phone&age>=18&(status!=X^role{A,B})^price>50
 ```
 
----
-
-## Percent‑encoding tips
-
-* `'` → `%27`, space → `%20`, `/` → `%2F`.
+Produces `filter`, `controls`, and an `insights` map with all operators used.
 
 ---
 
 ## Porting urlql to other stores
-The parser produces plain data.  To use with another database:
 
-1. Convert logical operators `$and/$or` into the target’s conjunctions.
-2. Map comparison keys (`$gt`, `$in`, etc.) to the engine’s predicate syntax.
-3. Honour `controls` where they make sense (e.g. translate `$sort` to `ORDER BY`).
+1. Translate logical nodes `$and/$or` into the target dialect.
+2. Map comparison keys (`$gt`, `$in`, …) to the datastore’s predicate DSL.
+3. Apply `controls` where relevant (projection, sorting, etc.).
+4. Use `insights` to enforce per‑field policy.
+
+A reference adapter for SQL builders is on the roadmap.
 
 ---
 
-Contributions are welcome – open an issue or PR 🤘
+## Contributing / Roadmap
+
+PRs and issues welcome – let’s evolve the language together 🛠️
 
 ---
 
 ## License
-MIT © Artem Maltsev
+
+MIT © Artem Maltsev

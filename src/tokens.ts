@@ -85,6 +85,9 @@ export const tokens: TokenDef[] = [
     // $keyword (reserved control keys, supports $exists and $!exists)
     { r: /^\$!?[A-Za-z0-9_]+/u, type: 'keyword' },
 
+    // unquoted string - any text
+    { r: /^(?:[^&^)\s=><!]+(?:\s|\+)+[^&^)=><!]*)+/u, type: 'string' },
+
     // field / bare word  (allow dots inside so we don’t need a separate DOT token)
     { r: /^[A-Za-z0-9_.]+/u, type: 'word' },
 
@@ -122,7 +125,7 @@ export function lex(input: string): Token[] {
         }
 
         if (!matched) {
-            throw new SyntaxError(`Unexpected char '${input[idx]}' at ${idx}`);
+            throw new SyntaxError(`Unexpected char '${input[idx]}' at ${idx} --- ${input}`);
         }
     }
     return tokensOut;

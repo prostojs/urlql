@@ -161,11 +161,9 @@ Produces `filter`, `controls`, and an `insights` map with all operators used.
 3. Apply `controls` where relevant (projection, sorting, etc.).
 4. Use `insights` to enforce per‑field policy.
 
-A reference adapter for SQL builders is on the roadmap.
-
 ---
 
-## Contributing / Roadmap
+## Contributing
 
 PRs and issues welcome – let’s evolve the language together 🛠️
 

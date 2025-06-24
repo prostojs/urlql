@@ -99,21 +99,24 @@ export function parseUrlql(raw: string): UrlqlQuery {
 
     // ── main expression ──
     let exprFilter: FilterExpr = {};
+    let parser: Parser
     if (exprParts.length) {
         const rawExpr = exprParts.join('&');      // keep “&”
         const decoded = decodeURIComponent(rawExpr);
         const tokens = lex(decoded);
-        const parser = new Parser(tokens);
+        parser = new Parser(tokens);
         exprFilter = parser.parseExpression();
-        for (const f of selectInsights) {
-            parser.captureInsights(f, '$select');
-        }
-        for (const f of orderInsights) {
-            parser.captureInsights(f, '$order');
-        }
-        result.insights = parser.getInsights();
         parser.expectEof();
-      }
+    } else {
+        parser = new Parser([]);
+    }
+    for (const f of selectInsights) {
+        parser.captureInsights(f, '$select');
+    }
+    for (const f of orderInsights) {
+        parser.captureInsights(f, '$order');
+    }
+    result.insights = parser.getInsights();
 
     // ── merge filters  (extra goes into $and if both exist) ──
     result.filter = exprFilter as UrlqlQuery['filter'];

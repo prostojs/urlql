@@ -8,6 +8,26 @@ describe('Urlql – happy‑path filters', () => {
         expect(r.filter).toEqual({ age: 25, status: 'ACTIVE' });
     });
 
+    it('only controls', () => {
+        const q = '$select=name';
+        const r = parseUrlql(q);
+        expect(r).toMatchInlineSnapshot(`
+          {
+            "controls": {
+              "$select": {
+                "name": 1,
+              },
+            },
+            "filter": {},
+            "insights": Map {
+              "name" => Set {
+                "$select",
+              },
+            },
+          }
+        `)
+    });
+
     it('simple equality for props with dots', () => {
         const q = 'client.age=25&items.0.status=ACTIVE';
         const r = parseUrlql(q);

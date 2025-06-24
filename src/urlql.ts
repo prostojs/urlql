@@ -20,7 +20,7 @@ export interface UrlqlQuery {
     } & Record<string, string>;
 
     /** Query Insights: a map of used fields with a set of used operators */
-    insights: Map<string, Set<SupportedOps>>;
+    insights: Map<string, Set<SupportedOps | '$select' | '$order'>>;
 }
 
 /** Minimal set of node shapes we emit */
@@ -91,10 +91,11 @@ export function parseUrlql(raw: string): UrlqlQuery {
         else if (p.length) exprParts.push(p);
     }
 
-    const result: UrlqlQuery = { filter: {}, controls: {}, insights: new Map() };
 
     // ── controls (also returns an optional extra filter) ──
-    handleControls(controlParts, result);
+    const { controls, selectInsights, orderInsights } = handleControls(controlParts);
+
+    const result: UrlqlQuery = { filter: {}, controls, insights: new Map() };
 
     // ── main expression ──
     let exprFilter: FilterExpr = {};
@@ -104,6 +105,12 @@ export function parseUrlql(raw: string): UrlqlQuery {
         const tokens = lex(decoded);
         const parser = new Parser(tokens);
         exprFilter = parser.parseExpression();
+        for (const f of selectInsights) {
+            parser.captureInsights(f, '$select');
+        }
+        for (const f of orderInsights) {
+            parser.captureInsights(f, '$order');
+        }
         result.insights = parser.getInsights();
         parser.expectEof();
       }
@@ -117,7 +124,15 @@ export function parseUrlql(raw: string): UrlqlQuery {
 /******************************************************************
  * 2. handleControls – implements all reserved keywords
  ******************************************************************/
-function handleControls(parts: string[], out: UrlqlQuery) {
+function handleControls(parts: string[]): {
+    controls: UrlqlQuery['controls'],
+    selectInsights: Set<string>
+    orderInsights: Set<string>
+} {
+
+    const controls = {} as UrlqlQuery['controls']
+    const selectInsights = new Set<string>()
+    const orderInsights = new Set<string>()
     for (const raw of parts) {
         const [key, ...rest] = raw.split('=');
         const value = decodeURIComponent(rest.join('=')); // keep '=' inside value, if any
@@ -125,11 +140,12 @@ function handleControls(parts: string[], out: UrlqlQuery) {
         switch (key) {
             /* ---------- projection ---------- */
             case '$select': {
-                out.controls.$select ??= {};
+                controls.$select ??= {};
                 value.split(',').forEach(f => {
                     if (!f) return;
-                    if (f.startsWith('-')) out.controls.$select![f.slice(1)] = 0;
-                    else out.controls.$select![f] = 1;
+                    selectInsights.add(f.replace(/^-/, ''))
+                    if (f.startsWith('-')) controls.$select![f.slice(1)] = 0;
+                    else controls.$select![f] = 1;
                 });
                 break;
             }
@@ -137,30 +153,36 @@ function handleControls(parts: string[], out: UrlqlQuery) {
             /* ---------- sorting & paging ---------- */
             case '$sort':
             case '$order': {
-                out.controls.$sort ??= {};
+                controls.$sort ??= {};
                 value.split(',').forEach(f => {
                     if (!f) return;
-                    if (f.startsWith('-')) out.controls!.$sort![f.slice(1)] = -1;
-                    else out.controls!.$sort![f] = 1;
+                    orderInsights.add(f.replace(/^-/, ''))
+                    if (f.startsWith('-')) controls!.$sort![f.slice(1)] = -1;
+                    else controls!.$sort![f] = 1;
                 });
                 break;
             }
             case '$limit':
             case '$top':
-                out.controls.$limit = Number(value);
+                controls.$limit = Number(value);
                 break;
 
             case '$skip':
-                out.controls.$skip = Number(value);
+                controls.$skip = Number(value);
                 break;
 
             case '$count':
-                out.controls.$count = true;
+                controls.$count = true;
                 break;
 
             /* ---------- unknown keyword ---------- */
             default:
-                out.controls[key] = value;
+                controls[key] = value;
         }
+    }
+    return {
+        controls,
+        selectInsights,
+        orderInsights,
     }
   }

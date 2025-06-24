@@ -313,6 +313,7 @@ describe('Urlql – kitchen-sink query', () => {
             },
             "score" => Set {
               "$gt",
+              "$order",
             },
             "price" => Set {
               "$gt",
@@ -320,6 +321,15 @@ describe('Urlql – kitchen-sink query', () => {
             },
             "deletedFrom" => Set {
               "$exists",
+            },
+            "firstName" => Set {
+              "$select",
+            },
+            "client.ssn" => Set {
+              "$select",
+            },
+            "createdAt" => Set {
+              "$order",
             },
           }
         `)

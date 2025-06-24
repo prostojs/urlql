@@ -25,9 +25,9 @@ export class Parser {
             throw new SyntaxError(`Unexpected token at pos ${this.t[this.i]?.pos}. End of input expected.`);
     }
 
-    private insights = new Map<string, Set<SupportedOps>>()
+    private insights = new Map<string, Set<SupportedOps | '$select' | '$order'>>()
 
-    private captureInsights(field: string, op: SupportedOps) {
+    captureInsights(field: string, op: SupportedOps | '$select' | '$order') {
         if (!this.insights.has(field)) {
             this.insights.set(field, new Set())
         }

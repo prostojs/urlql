@@ -135,6 +135,7 @@ function handleControls(parts: string[], out: UrlqlQuery) {
             }
 
             /* ---------- sorting & paging ---------- */
+            case '$sort':
             case '$order': {
                 out.controls.$sort ??= {};
                 value.split(',').forEach(f => {

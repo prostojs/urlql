@@ -1,3 +1,12 @@
+## [0.0.4](https://github.com/prostojs/urlql/compare/v0.0.3...v0.0.4) (2025-06-24)
+
+
+### Bug Fixes
+
+* fix insights for controls only ([9dc6a93](https://github.com/prostojs/urlql/commit/9dc6a934c7c8030007479dbffc97916a8608b780))
+
+
+
 ## [0.0.3](https://github.com/prostojs/urlql/compare/v0.0.2...v0.0.3) (2025-06-24)
 
 

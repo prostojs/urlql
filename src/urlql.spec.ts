@@ -378,7 +378,7 @@ describe('Urlql – percent-encoded literals', () => {
 
 describe('Urlql control words', () => {
     it('supports only control words', () => {
-        const q = "$search=test";
+        const q = "%24search=test";
         const r = parseUrlql(q);
         expect(r.controls).toEqual({
             $search: 'test',

@@ -86,7 +86,8 @@ export function parseUrlql(raw: string): UrlqlQuery {
     const controlParts: string[] = [];
     const exprParts: string[] = [];
 
-    for (const p of parts) {
+    for (const _p of parts) {
+        const p = decodeURIComponent(_p);
         if (/^\$[A-Za-z0-9_!]+/.test(p) && !p.startsWith('$exists=') && !p.startsWith('$!exists=')) controlParts.push(p);
         else if (p.length) exprParts.push(p);
     }
@@ -102,8 +103,8 @@ export function parseUrlql(raw: string): UrlqlQuery {
     let parser: Parser
     if (exprParts.length) {
         const rawExpr = exprParts.join('&');      // keep “&”
-        const decoded = decodeURIComponent(rawExpr);
-        const tokens = lex(decoded);
+        // const decoded = decodeURIComponent(rawExpr);
+        const tokens = lex(rawExpr);
         parser = new Parser(tokens);
         exprFilter = parser.parseExpression();
         parser.expectEof();

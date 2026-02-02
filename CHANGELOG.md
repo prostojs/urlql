@@ -1,3 +1,12 @@
+## [0.0.5](https://github.com/prostojs/urlql/compare/v0.0.4...v0.0.5) (2026-02-02)
+
+
+### Bug Fixes
+
+* process %24 as $ ([2ffa287](https://github.com/prostojs/urlql/commit/2ffa2871e22a33157a6944b796d750dcf30eff5c))
+
+
+
 ## [0.0.4](https://github.com/prostojs/urlql/compare/v0.0.3...v0.0.4) (2025-06-24)
 
 
